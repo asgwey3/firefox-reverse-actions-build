@@ -32,6 +32,19 @@ jobs:
 
     steps:
       # ============================================================
+      # 系统环境：启用长路径支持（避免 checkout / build 失败）
+      # ============================================================
+      - name: Enable Windows long paths
+        shell: pwsh
+        run: |
+          # Git for Windows
+          git config --global core.longpaths true
+          # Windows 系统级（需 admin，GitHub Actions runner 默认 admin）
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -Value 1 -Type DWord -Force
+          Write-Host "core.longpaths = $(git config --global core.longpaths)"
+          Write-Host "LongPathsEnabled = $(Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled).LongPathsEnabled"
+
+      # ============================================================
       # 检出仓库
       # ============================================================
       - name: Checkout
