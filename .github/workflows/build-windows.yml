@@ -1,0 +1,314 @@
+name: Build Windows x64
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream-ref:
+        description: 'Firefox upstream tag / branch'
+        required: false
+        default: 'main'
+      mozconfig:
+        description: 'mozconfig file to use (relative to configs/)'
+        required: false
+        default: 'mozconfig.windows-x64'
+  push:
+    branches: [main]
+    paths:
+      - 'additions/**'
+      - 'patches/**'
+      - 'configs/mozconfig.windows-x64'
+      - 'scripts/**'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build:
+    name: Firefox-Reverse (Windows x86_64)
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    env:
+      UPSTREAM_REF: ${{ github.event.inputs.upstream-ref || 'main' }}
+      MOZCONFIG_FILE: ${{ github.event.inputs.mozconfig || 'mozconfig.windows-x64' }}
+
+    steps:
+      # ============================================================
+      # 释放磁盘空间（Firefox 构建树 ~30-50 GB）
+      # ============================================================
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          Write-Host "=== Before cleanup ==="
+          Get-PSDrive C, D | Format-Table Name, Used, Free
+
+          $toRemove = @(
+            "$env:ProgramData\chocolatey",
+            "$env:LOCALAPPDATA\Microsoft\VisualStudio\16*",
+            "C:\Program Files\dotnet",
+            "C:\Program Files (x86)\dotnet",
+            "C:\Program Files\Microsoft SQL Server",
+            "C:\Program Files (x86)\Microsoft SQL Server",
+            "C:\Program Files\LLVM",
+            "C:\Program Files\Java",
+            "C:\Program Files (x86)\Java",
+            "C:\Program Files\Azure Cosmos DB Emulator",
+            "C:\Program Files\Google",
+            "C:\Program Files (x86)\Google",
+            "C:\ProgramData\Microsoft\VisualStudio\Packages",
+            "C:\Program Files (x86)\Android",
+            "C:\Program Files\Android",
+            "C:\ProgramData\Microsoft\Android",
+            "C:\msys64",
+            "C:\Miniconda",
+            "C:\Strawberry"
+          )
+          foreach ($p in $toRemove) {
+            if (Test-Path $p) {
+              Write-Host "Removing $p ..."
+              Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          Write-Host "=== After cleanup ==="
+          Get-PSDrive C, D | Format-Table Name, Used, Free
+
+      # ============================================================
+      # 检出仓库
+      # ============================================================
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # 安装 MozillaBuild（提供 MSYS2 环境，mach 依赖它）
+      # ============================================================
+      - name: Install MozillaBuild
+        shell: pwsh
+        run: |
+          $url = "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe"
+          $installer = "$env:TEMP\MozillaBuildSetup.exe"
+          Write-Host "Downloading MozillaBuild ..."
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          Write-Host "Installing silently ..."
+          Start-Process -Wait -FilePath $installer -ArgumentList "/S"
+          Write-Host "MozillaBuild installed."
+
+      - name: Verify MozillaBuild
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          if (-not (Test-Path $bash)) {
+            throw "MozillaBuild bash not found at $bash"
+          }
+          & $bash -lc "uname -a && echo '---' && which git && which python3 && which rustc 2>/dev/null || true"
+
+      # ============================================================
+      # 计算 MSYS2 路径，导出为 CI_WORKSPACE 供后续 bash 步骤使用
+      # ============================================================
+      - name: Compute MSYS2 workspace path
+        shell: pwsh
+        run: |
+          $winPath = (Resolve-Path "${{ github.workspace }}").Path
+          $msysPath = ($winPath -replace '^([A-Z]):', '/$1') -replace '\\', '/'
+          "CI_WORKSPACE=$msysPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Windows path : $winPath"
+          Write-Host "MSYS2 path  : $msysPath"
+
+      # ============================================================
+      # 克隆 Firefox 上游源码
+      # ============================================================
+      - name: Clone Firefox upstream
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            cd "$CI_WORKSPACE"
+            if [ -d upstream/.git ]; then
+              echo "[CI] upstream 已存在，跳过 clone"
+              exit 0
+            fi
+            echo "[CI] git clone --depth 1 --branch $UPSTREAM_REF https://github.com/mozilla-firefox/firefox.git upstream"
+            git clone --depth 1 --branch "$UPSTREAM_REF" https://github.com/mozilla-firefox/firefox.git upstream
+            echo "[CI] clone done."
+          '@
+
+      # ============================================================
+      # 应用补丁 & 拷贝 additions/
+      # ============================================================
+      - name: Apply patches
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            REPO_ROOT="$CI_WORKSPACE"
+            UPSTREAM_DIR="$REPO_ROOT/upstream"
+
+            cd "$UPSTREAM_DIR"
+
+            MODULES=(property-trace network-analysis cookie-js-analysis fingerprint proxy jsvmp-trace agent-ui branding)
+
+            for module in "${MODULES[@]}"; do
+              patches_dir="$REPO_ROOT/patches/$module"
+              if [ -d "$patches_dir" ]; then
+                shopt -s nullglob
+                files=("$patches_dir"/*.patch)
+                if [ ${#files[@]} -eq 0 ]; then
+                  echo "[CI] $module: 无 .patch 文件，跳过"
+                  continue
+                fi
+                echo "[CI] $module: applying ${#files[@]} patches"
+                for p in "${files[@]}"; do
+                  git apply --index "$p"
+                done
+              fi
+            done
+
+            # 拷贝 additions/
+            if [ -d "$REPO_ROOT/additions" ]; then
+              echo "[CI] copying additions/ to $UPSTREAM_DIR"
+              rsync -a --exclude README.md --exclude node_modules --exclude dev \
+                --exclude '*.jsx' --exclude 'package*.json' --exclude .gitignore \
+                "$REPO_ROOT/additions/" "$UPSTREAM_DIR/"
+            fi
+
+            python3 "$REPO_ROOT/scripts/apply-fingerprint-config.py" "$UPSTREAM_DIR"
+
+            echo "[CI] patches applied."
+          '@
+
+      # ============================================================
+      # 配置 mozconfig
+      # ============================================================
+      - name: Setup mozconfig
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            REPO_ROOT="$CI_WORKSPACE"
+            cp "$REPO_ROOT/configs/$MOZCONFIG_FILE" "$REPO_ROOT/upstream/mozconfig"
+            echo "[CI] mozconfig ($MOZCONFIG_FILE) => upstream/mozconfig"
+            echo "------"
+            cat "$REPO_ROOT/upstream/mozconfig"
+            echo "------"
+          '@
+
+      # ============================================================
+      # 验证 branding 资产（可选：node 不在 MozillaBuild PATH 时会跳过）
+      # ============================================================
+      - name: Check branding assets
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            REPO_ROOT="$CI_WORKSPACE"
+            if command -v node &>/dev/null; then
+              node "$REPO_ROOT/scripts/check-branding-assets.mjs" "$REPO_ROOT/upstream"
+            else
+              echo "[CI] node not found in PATH, skipping branding check (mach bootstrap will install it)"
+            fi
+          '@
+
+      # ============================================================
+      # 编译 Firefox
+      # ============================================================
+      - name: Build Firefox
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            REPO_ROOT="$CI_WORKSPACE"
+            cd "$REPO_ROOT/upstream"
+
+            # 运行 mach bootstrap（首次）
+            if [ ! -f .bootstrap-done ]; then
+              echo "[CI] running mach bootstrap ..."
+              ./mach --no-interactive bootstrap --application-choice browser
+              touch .bootstrap-done
+            fi
+
+            echo "[CI] running mach build ..."
+            ./mach build
+            echo "[CI] build done."
+          '@
+
+      # ============================================================
+      # 打包
+      # ============================================================
+      - name: Package
+        shell: pwsh
+        run: |
+          $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
+          & $bash -lc @'
+            set -euo pipefail
+            REPO_ROOT="$CI_WORKSPACE"
+            cd "$REPO_ROOT/upstream"
+            ./mach package
+            echo "[CI] package done."
+
+            # 列出打包产物
+            echo "------"
+            find obj-*/dist -maxdepth 1 -type f \( -name '*.zip' -o -name '*.exe' \) -exec ls -lh {} \;
+            echo "------"
+          '@
+
+      # ============================================================
+      # 收集产物到 dist/
+      # ============================================================
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $dist = Join-Path "${{ github.workspace }}" "dist"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
+          $upstream = Join-Path "${{ github.workspace }}" "upstream"
+          $patterns = @(
+            "*.win64.zip",
+            "*.win64.installer.exe"
+          )
+          foreach ($pattern in $patterns) {
+            Get-ChildItem -Path $upstream -Filter $pattern -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "Copying $($_.FullName) -> $dist"
+              Copy-Item -Path $_.FullName -Destination $dist -Force
+            }
+          }
+
+          Write-Host "=== Artifacts ==="
+          Get-ChildItem $dist | Format-Table Name, Length
+
+      # ============================================================
+      # 上传构建产物
+      # ============================================================
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-reverse-windows-x64
+          path: dist/*
+          retention-days: 7
+
+      # ============================================================
+      # 构建摘要
+      # ============================================================
+      - name: Build summary
+        if: always()
+        shell: pwsh
+        run: |
+          $dist = Join-Path "${{ github.workspace }}" "dist"
+          Write-Host "============================================"
+          Write-Host "  Build Summary"
+          Write-Host "============================================"
+          Write-Host "  Upstream ref : $env:UPSTREAM_REF"
+          Write-Host "  Mozconfig    : $env:MOZCONFIG_FILE"
+          Write-Host "============================================"
+          if (Test-Path $dist) {
+            Write-Host "  Artifacts:"
+            Get-ChildItem $dist | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 1)
+              Write-Host "    $($_.Name)  (${sizeMB} MB)"
+            }
+          } else {
+            Write-Host "  (no artifacts)"
+          }
+          Write-Host "============================================"
