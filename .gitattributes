@@ -1,0 +1,3 @@
+# Ensure patches always use LF line endings, regardless of platform.
+# git apply on Windows fails if patches are converted to CRLF during checkout.
+*.patch text eol=lf
