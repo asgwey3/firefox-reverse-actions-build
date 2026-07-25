@@ -6,7 +6,7 @@ on:
       upstream-ref:
         description: 'Firefox upstream tag / branch'
         required: false
-        default: 'main'
+        default: 'FIREFOX_BETA_153_BASE'
       mozconfig:
         description: 'mozconfig file to use (relative to configs/)'
         required: false
@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 360
 
     env:
-      UPSTREAM_REF: ${{ github.event.inputs.upstream-ref || 'main' }}
+      UPSTREAM_REF: ${{ github.event.inputs.upstream-ref || 'FIREFOX_BETA_153_BASE' }}
       MOZCONFIG_FILE: ${{ github.event.inputs.mozconfig || 'mozconfig.windows-x64' }}
 
     steps:
@@ -132,11 +132,6 @@ jobs:
             UPSTREAM_DIR="$REPO_ROOT/upstream"
 
             cd "$UPSTREAM_DIR"
-
-            # 修复 Windows checkout 导致的 patch 文件 CRLF 问题（防御性措施）
-            # .gitattributes 已设置 *.patch eol=lf，此处作为兜底
-            echo "[CI] normalizing patch line-endings ..."
-            find "$REPO_ROOT/patches" -name '*.patch' -print0 | xargs -0 sed -i 's/\r$//' 2>/dev/null || true
 
             MODULES=(property-trace network-analysis cookie-js-analysis fingerprint proxy jsvmp-trace agent-ui branding)
 
