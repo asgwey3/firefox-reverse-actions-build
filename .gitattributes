@@ -1,3 +1,4 @@
-# Ensure patches always use LF line endings, regardless of platform.
-# git apply on Windows fails if patches are converted to CRLF during checkout.
-*.patch text eol=lf
+# .patch 文件禁止换行符转换。
+# core.autocrlf=true（Windows 默认）会覆盖 eol=lf，
+# 导致 git apply 报 corrupt patch。用 -text 彻底禁止。
+*.patch -text
