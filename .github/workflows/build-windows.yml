@@ -94,9 +94,14 @@ jobs:
           }
           "GIT_PATH_MSYS=$gitMsys" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+          # MozillaBuild Python 路径（MSYS2 格式），供后续 mach 步骤使用
+          $pythonMsys = "/c/mozilla-build/python3"
+          "PYTHON_PATH_MSYS=$pythonMsys" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           Write-Host "Windows workspace : $winPath"
           Write-Host "MSYS2 workspace   : $msysPath"
           Write-Host "Git path (MSYS2)  : $gitMsys"
+          Write-Host "Python path       : $pythonMsys"
 
       # ============================================================
       # 克隆 Firefox 上游源码（用 Git Bash，git 立即可用）
@@ -127,6 +132,8 @@ jobs:
             if ! command -v git &>/dev/null && [ -n "${GIT_PATH_MSYS:-}" ]; then
               export PATH="$GIT_PATH_MSYS:$PATH"
             fi
+            # 确保 MozillaBuild Python 在 PATH 中
+            [ -n "${PYTHON_PATH_MSYS:-}" ] && export PATH="$PYTHON_PATH_MSYS:$PATH"
 
             REPO_ROOT="$CI_WORKSPACE"
             UPSTREAM_DIR="$REPO_ROOT/upstream"
@@ -251,6 +258,7 @@ jobs:
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
             set -euo pipefail
+            export PATH="$PYTHON_PATH_MSYS:$PATH"
             REPO_ROOT="$CI_WORKSPACE"
             cd "$REPO_ROOT/upstream"
 
@@ -275,6 +283,7 @@ jobs:
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
             set -euo pipefail
+            export PATH="$PYTHON_PATH_MSYS:$PATH"
             REPO_ROOT="$CI_WORKSPACE"
             cd "$REPO_ROOT/upstream"
             ./mach package
