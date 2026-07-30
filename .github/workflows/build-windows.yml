@@ -154,9 +154,10 @@ jobs:
             # 拷贝 additions/
             if [ -d "$REPO_ROOT/additions" ]; then
               echo "[CI] copying additions/ to $UPSTREAM_DIR"
-              rsync -a --exclude README.md --exclude node_modules --exclude dev \
-                --exclude '*.jsx' --exclude 'package*.json' --exclude .gitignore \
-                "$REPO_ROOT/additions/" "$UPSTREAM_DIR/"
+              cd "$REPO_ROOT"
+              tar -cf - --exclude README.md --exclude node_modules --exclude dev \
+                --exclude '*.jsx' --exclude 'package.json' --exclude 'package-lock.json' \
+                --exclude .gitignore additions/ | tar -xf - -C "$UPSTREAM_DIR/"
             fi
 
             python3 "$REPO_ROOT/scripts/apply-fingerprint-config.py" "$UPSTREAM_DIR"
