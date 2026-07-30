@@ -170,7 +170,7 @@ jobs:
               cd "$REPO_ROOT"
               tar -cf - --exclude README.md --exclude node_modules --exclude dev \
                 --exclude '*.jsx' --exclude 'package.json' --exclude 'package-lock.json' \
-                --exclude .gitignore additions/ | tar -xf - -C "$UPSTREAM_DIR/"
+                --exclude .gitignore additions/ | tar -xf - --strip-components=1 -C "$UPSTREAM_DIR/"
             fi
 
             # 指纹配置（非关键，python 不可用时跳过）
