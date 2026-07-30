@@ -261,14 +261,18 @@ jobs:
       - name: Build Firefox
         shell: pwsh
         run: |
+          # 移动 upstream 到短路径绕过 mach 的 62 字符限制
+          $shortDir = "D:\fx"
+          if (Test-Path $shortDir) { Remove-Item -Recurse -Force $shortDir }
+          Move-Item -Path "$env:CI_SHORT_WIN\upstream" -Destination $shortDir
+          "CI_UPSTREAM=$shortDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
             set -euo pipefail
-            # 确保 Git for Windows + MozillaBuild Python 在 PATH 中
             [ -n "${GIT_PATH_MSYS:-}" ] && export PATH="$GIT_PATH_MSYS:$PATH"
-            export PATH="$GIT_PATH_MSYS:$MOZILLABUILD_PATHS:$PATH"
-            REPO_ROOT="$CI_WORKSPACE"
-            cd "$REPO_ROOT/upstream"
+            export PATH="$MOZILLABUILD_PATHS:$PATH"
+            cd /d/fx
 
             # 运行 mach bootstrap（首次）
             if [ ! -f .bootstrap-done ]; then
@@ -293,8 +297,7 @@ jobs:
             set -euo pipefail
             [ -n "${GIT_PATH_MSYS:-}" ] && export PATH="$GIT_PATH_MSYS:$PATH"
             export PATH="$MOZILLABUILD_PATHS:$PATH"
-            REPO_ROOT="$CI_WORKSPACE"
-            cd "$REPO_ROOT/upstream"
+            cd /d/fx
             ./mach package
             echo "[CI] package done."
 
@@ -313,7 +316,7 @@ jobs:
           $dist = Join-Path "$env:CI_SHORT_WIN" "dist"
           New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-          $upstream = Join-Path "$env:CI_SHORT_WIN" "upstream"
+          $upstream = "D:\fx"
           $patterns = @(
             "*.win64.zip",
             "*.win64.installer.exe"
