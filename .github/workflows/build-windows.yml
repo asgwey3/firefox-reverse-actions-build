@@ -261,11 +261,10 @@ jobs:
       - name: Build Firefox
         shell: pwsh
         run: |
-          # 移动 upstream 到短路径绕过 mach 的 62 字符限制
-          $shortDir = "D:\fx"
-          if (Test-Path $shortDir) { Remove-Item -Recurse -Force $shortDir }
-          Move-Item -Path "$env:CI_SHORT_WIN\upstream" -Destination $shortDir
-          "CI_UPSTREAM=$shortDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # 物理复制 upstream 到短路径 D:\fx，绕过 mach 的 62 字符限制
+          robocopy "$env:CI_SHORT_WIN\upstream" D:\fx /E /COPY:DAT /R:3 /W:5 /NFL /NDL
+          if ($LASTEXITCODE -ge 8) { throw "robocopy failed" }
+          "CI_UPSTREAM=D:\fx" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
