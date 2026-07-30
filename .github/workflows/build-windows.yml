@@ -74,14 +74,20 @@ jobs:
           & $bash -lc "uname -a && echo '---' && which git && which python3 && which rustc 2>/dev/null || true"
 
       # ============================================================
-      # 计算 MSYS2 路径，导出 CI_WORKSPACE；同时定位 Git for Windows 路径
+      # 计算路径 + 短路径映射（Windows 限制 source 路径 ≤62 字符）
       # ============================================================
       - name: Compute paths
         shell: pwsh
         run: |
-          # MSYS2 格式的工作区路径
           $winPath = (Resolve-Path "${{ github.workspace }}").Path
-          $msysPath = ($winPath -replace '^([A-Z]):', '/$1') -replace '\\', '/'
+
+          # 用 subst 映射 S: 盘到工作区，绕过路径长度限制
+          subst S: $winPath
+          $shortWinPath = "S:\\"
+          "CI_SHORT_WIN=$shortWinPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          # MSYS2 格式路径
+          $msysPath = "/s"
           "CI_WORKSPACE=$msysPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           # Git for Windows 路径（MSYS2 格式），供 MozillaBuild bash 使用
@@ -304,10 +310,10 @@ jobs:
       - name: Collect artifacts
         shell: pwsh
         run: |
-          $dist = Join-Path "${{ github.workspace }}" "dist"
+          $dist = Join-Path "$env:CI_SHORT_WIN" "dist"
           New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-          $upstream = Join-Path "${{ github.workspace }}" "upstream"
+          $upstream = Join-Path "$env:CI_SHORT_WIN" "upstream"
           $patterns = @(
             "*.win64.zip",
             "*.win64.installer.exe"
@@ -339,7 +345,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $dist = Join-Path "${{ github.workspace }}" "dist"
+          $dist = Join-Path "$env:CI_SHORT_WIN" "dist"
           Write-Host "============================================"
           Write-Host "  Build Summary"
           Write-Host "============================================"
