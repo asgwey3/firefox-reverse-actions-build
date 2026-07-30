@@ -149,9 +149,12 @@ jobs:
                   # checkout 时 core.autocrlf=true 可能把 LF 转 CRLF，先清掉
                   echo "[CI] patch: $(basename "$p")"
                   tr -d $'\r' < "$p" > "$p.tmp" && mv "$p.tmp" "$p"
-                  # 调试：确认补丁格式
                   file "$p"
-                  sed -n '49,51p' "$p" | cat -An
+                  echo "--- line 49-52 raw ---"
+                  sed -n '49,52p' "$p" | cat -An
+                  echo "--- git apply --check ---"
+                  git apply --check "$p" 2>&1 || true
+                  echo "--- git apply --verbose ---"
                   git apply --verbose --index "$p"
                 done
               fi
