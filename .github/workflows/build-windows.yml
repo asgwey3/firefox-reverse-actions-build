@@ -258,6 +258,8 @@ jobs:
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
             set -euo pipefail
+            # 确保 Git for Windows + MozillaBuild Python 在 PATH 中
+            [ -n "${GIT_PATH_MSYS:-}" ] && export PATH="$GIT_PATH_MSYS:$PATH"
             export PATH="$PYTHON_PATH_MSYS:$PATH"
             REPO_ROOT="$CI_WORKSPACE"
             cd "$REPO_ROOT/upstream"
@@ -283,6 +285,7 @@ jobs:
           $bash = "C:\mozilla-build\msys2\usr\bin\bash.exe"
           & $bash -lc @'
             set -euo pipefail
+            [ -n "${GIT_PATH_MSYS:-}" ] && export PATH="$GIT_PATH_MSYS:$PATH"
             export PATH="$PYTHON_PATH_MSYS:$PATH"
             REPO_ROOT="$CI_WORKSPACE"
             cd "$REPO_ROOT/upstream"
