@@ -133,12 +133,6 @@ jobs:
 
             cd "$UPSTREAM_DIR"
 
-            # actions/checkout 在 Windows 上默认 core.autocrlf=true 会把
-            # .patch 文件 LF 转 CRLF，导致 git apply 报 corrupt。
-            # .gitattributes 已声明 *.patch text eol=lf，提交后生效；此处兜底。
-            echo "[CI] stripping CR from patch files ..."
-            find "$REPO_ROOT/patches" -name '*.patch' -exec dos2unix -q {} \;
-
             MODULES=(property-trace network-analysis cookie-js-analysis fingerprint proxy jsvmp-trace agent-ui branding)
 
             for module in "${MODULES[@]}"; do
@@ -152,6 +146,8 @@ jobs:
                 fi
                 echo "[CI] $module: applying ${#files[@]} patches"
                 for p in "${files[@]}"; do
+                  # checkout 时 core.autocrlf=true 可能把 LF 转 CRLF，先清掉
+                  tr -d '\r' < "$p" > "$p.tmp" && mv "$p.tmp" "$p"
                   git apply --index "$p"
                 done
               fi
