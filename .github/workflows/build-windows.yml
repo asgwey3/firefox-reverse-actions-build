@@ -160,7 +160,10 @@ jobs:
                 --exclude .gitignore additions/ | tar -xf - -C "$UPSTREAM_DIR/"
             fi
 
-            python3 "$REPO_ROOT/scripts/apply-fingerprint-config.py" "$UPSTREAM_DIR"
+            # 指纹配置（非关键，python 不可用时跳过）
+            (python3 "$REPO_ROOT/scripts/apply-fingerprint-config.py" "$UPSTREAM_DIR" \
+              || python "$REPO_ROOT/scripts/apply-fingerprint-config.py" "$UPSTREAM_DIR" \
+              || echo "[CI] python not available, skipping fingerprint config")
 
             echo "[CI] patches applied."
           '@
